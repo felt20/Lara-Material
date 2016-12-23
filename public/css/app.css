@@ -1,0 +1,12 @@
+.page-flexbox-wrapper {
+  display: -ms-flexbox;
+  display: flex;
+  min-height: 100vh;
+  -ms-flex-direction: column;
+  flex-direction: column; }
+
+main {
+  -ms-flex: 1 0 auto;
+  flex: 1 0 auto; }
+
+/*# sourceMappingURL=app.css.map */
