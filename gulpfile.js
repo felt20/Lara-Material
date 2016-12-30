@@ -1,6 +1,6 @@
-var elixir = require('laravel-elixir'),
-    bowerDir = 'vendor/bower_components/',
-    materialDir = bowerDir + 'materialize/dist/';
+const elixir = require('laravel-elixir');
+
+require('laravel-elixir-vue-2');
 
 /*
  |--------------------------------------------------------------------------
@@ -13,11 +13,8 @@ var elixir = require('laravel-elixir'),
  |
  */
 
-elixir(function (mix) {
-    mix.sass('app.scss')
-        .copy(bowerDir + 'jquery/dist/jquery.min.js', 'public/js/vendor/jquery.js')
-        .copy(materialDir + 'js/materialize.min.js', 'public/js/vendor/materialize.js')
-        .copy(materialDir + 'css/materialize.min.css','public/css/materialize.css')
-        .stylesIn('public/css')
-        .scriptsIn('public/js/vendor');
+elixir.config.assetsPath = './resources/preprocessor-source/';
+
+elixir(function(mix) {
+    mix.sass('app.scss');
 });

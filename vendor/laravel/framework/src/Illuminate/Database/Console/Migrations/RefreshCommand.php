@@ -39,15 +39,30 @@ class RefreshCommand extends Command
 
         $force = $this->input->getOption('force');
 
-        $this->call('migrate:reset', [
-            '--database' => $database, '--force' => $force,
-        ]);
+        $path = $this->input->getOption('path');
+
+        // If the "step" option is specified it means we only want to rollback a small
+        // number of migrations before migrating again. For example, the user might
+        // only rollback and remigrate the latest four migrations instead of all.
+        $step = $this->input->getOption('step') ?: 0;
+
+        if ($step > 0) {
+            $this->call('migrate:rollback', [
+                '--database' => $database, '--force' => $force, '--path' => $path, '--step' => $step,
+            ]);
+        } else {
+            $this->call('migrate:reset', [
+                '--database' => $database, '--force' => $force, '--path' => $path,
+            ]);
+        }
 
         // The refresh command is essentially just a brief aggregate of a few other of
         // the migration commands and just provides a convenient wrapper to execute
         // them in succession. We'll also see if we need to re-seed the database.
         $this->call('migrate', [
-            '--database' => $database, '--force' => $force,
+            '--database' => $database,
+            '--force' => $force,
+            '--path' => $path,
         ]);
 
         if ($this->needsSeeding()) {
@@ -94,9 +109,13 @@ class RefreshCommand extends Command
 
             ['force', null, InputOption::VALUE_NONE, 'Force the operation to run when in production.'],
 
+            ['path', null, InputOption::VALUE_OPTIONAL, 'The path of migrations files to be executed.'],
+
             ['seed', null, InputOption::VALUE_NONE, 'Indicates if the seed task should be re-run.'],
 
             ['seeder', null, InputOption::VALUE_OPTIONAL, 'The class name of the root seeder.'],
+
+            ['step', null, InputOption::VALUE_OPTIONAL, 'The number of migrations to be reverted & re-run.'],
         ];
     }
 }

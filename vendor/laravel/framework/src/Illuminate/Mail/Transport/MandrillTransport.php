@@ -44,8 +44,8 @@ class MandrillTransport extends Transport
         $data = [
             'key' => $this->key,
             'to' => $this->getToAddresses($message),
-            'raw_message' => (string) $message,
-            'async' => false,
+            'raw_message' => $message->toString(),
+            'async' => true,
         ];
 
         if (version_compare(ClientInterface::VERSION, '6') === 1) {
@@ -54,7 +54,11 @@ class MandrillTransport extends Transport
             $options = ['body' => $data];
         }
 
-        return $this->client->post('https://mandrillapp.com/api/1.0/messages/send-raw.json', $options);
+        $this->client->post('https://mandrillapp.com/api/1.0/messages/send-raw.json', $options);
+
+        $this->sendPerformed($message);
+
+        return $this->numberOfRecipients($message);
     }
 
     /**
@@ -98,7 +102,7 @@ class MandrillTransport extends Transport
      * Set the API key being used by the transport.
      *
      * @param  string  $key
-     * @return void
+     * @return string
      */
     public function setKey($key)
     {

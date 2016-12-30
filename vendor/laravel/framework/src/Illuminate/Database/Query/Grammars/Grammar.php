@@ -2,11 +2,20 @@
 
 namespace Illuminate\Database\Query\Grammars;
 
+use Illuminate\Support\Arr;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Database\Grammar as BaseGrammar;
 
 class Grammar extends BaseGrammar
 {
+    /**
+     * The grammar specific operators.
+     *
+     * @var array
+     */
+    protected $operators = [];
+
     /**
      * The components that make up a select clause.
      *
@@ -35,11 +44,17 @@ class Grammar extends BaseGrammar
      */
     public function compileSelect(Builder $query)
     {
+        $original = $query->columns;
+
         if (is_null($query->columns)) {
             $query->columns = ['*'];
         }
 
-        return trim($this->concatenate($this->compileComponents($query)));
+        $sql = trim($this->concatenate($this->compileComponents($query)));
+
+        $query->columns = $original;
+
+        return $sql;
     }
 
     /**
@@ -92,7 +107,7 @@ class Grammar extends BaseGrammar
      *
      * @param  \Illuminate\Database\Query\Builder  $query
      * @param  array  $columns
-     * @return string
+     * @return string|null
      */
     protected function compileColumns(Builder $query, $columns)
     {
@@ -131,63 +146,15 @@ class Grammar extends BaseGrammar
     {
         $sql = [];
 
-        $query->setBindings([], 'join');
-
         foreach ($joins as $join) {
+            $conditions = $this->compileWheres($join);
+
             $table = $this->wrapTable($join->table);
 
-            // First we need to build all of the "on" clauses for the join. There may be many
-            // of these clauses so we will need to iterate through each one and build them
-            // separately, then we'll join them up into a single string when we're done.
-            $clauses = [];
-
-            foreach ($join->clauses as $clause) {
-                $clauses[] = $this->compileJoinConstraint($clause);
-            }
-
-            foreach ($join->bindings as $binding) {
-                $query->addBinding($binding, 'join');
-            }
-
-            // Once we have constructed the clauses, we'll need to take the boolean connector
-            // off of the first clause as it obviously will not be required on that clause
-            // because it leads the rest of the clauses, thus not requiring any boolean.
-            $clauses[0] = $this->removeLeadingBoolean($clauses[0]);
-
-            $clauses = implode(' ', $clauses);
-
-            $type = $join->type;
-
-            // Once we have everything ready to go, we will just concatenate all the parts to
-            // build the final join statement SQL for the query and we can then return the
-            // final clause back to the callers as a single, stringified join statement.
-            $sql[] = "$type join $table on $clauses";
+            $sql[] = trim("{$join->type} join {$table} {$conditions}");
         }
 
         return implode(' ', $sql);
-    }
-
-    /**
-     * Create a join clause constraint segment.
-     *
-     * @param  array   $clause
-     * @return string
-     */
-    protected function compileJoinConstraint(array $clause)
-    {
-        $first = $this->wrap($clause['first']);
-
-        if ($clause['where']) {
-            if ($clause['operator'] === 'in' || $clause['operator'] === 'not in') {
-                $second = '('.implode(', ', array_fill(0, $clause['second'], '?')).')';
-            } else {
-                $second = '?';
-            }
-        } else {
-            $second = $this->wrap($clause['second']);
-        }
-
-        return "{$clause['boolean']} $first {$clause['operator']} $second";
     }
 
     /**
@@ -219,7 +186,9 @@ class Grammar extends BaseGrammar
         if (count($sql) > 0) {
             $sql = implode(' ', $sql);
 
-            return 'where '.$this->removeLeadingBoolean($sql);
+            $conjunction = $query instanceof JoinClause ? 'on' : 'where';
+
+            return $conjunction.' '.$this->removeLeadingBoolean($sql);
         }
 
         return '';
@@ -236,7 +205,9 @@ class Grammar extends BaseGrammar
     {
         $nested = $where['query'];
 
-        return '('.substr($this->compileWheres($nested), 6).')';
+        $offset = $query instanceof JoinClause ? 3 : 6;
+
+        return '('.substr($this->compileWheres($nested), $offset).')';
     }
 
     /**
@@ -265,6 +236,20 @@ class Grammar extends BaseGrammar
         $value = $this->parameter($where['value']);
 
         return $this->wrap($where['column']).' '.$where['operator'].' '.$value;
+    }
+
+    /**
+     * Compile a where clause comparing two columns..
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  array  $where
+     * @return string
+     */
+    protected function whereColumn(Builder $query, $where)
+    {
+        $second = $this->wrap($where['second']);
+
+        return $this->wrap($where['first']).' '.$where['operator'].' '.$second;
     }
 
     /**
@@ -406,6 +391,18 @@ class Grammar extends BaseGrammar
     }
 
     /**
+     * Compile a "where time" clause.
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  array  $where
+     * @return string
+     */
+    protected function whereTime(Builder $query, $where)
+    {
+        return $this->dateBasedWhere('time', $query, $where);
+    }
+
+    /**
      * Compile a "where day" clause.
      *
      * @param  \Illuminate\Database\Query\Builder  $query
@@ -536,6 +533,10 @@ class Grammar extends BaseGrammar
      */
     protected function compileOrders(Builder $query, $orders)
     {
+        if (empty($orders)) {
+            return '';
+        }
+
         return 'order by '.implode(', ', array_map(function ($order) {
             if (isset($order['sql'])) {
                 return $order['sql'];
@@ -543,6 +544,17 @@ class Grammar extends BaseGrammar
 
             return $this->wrap($order['column']).' '.$order['direction'];
         }, $orders));
+    }
+
+    /**
+     * Compile the random statement into SQL.
+     *
+     * @param  string  $seed
+     * @return string
+     */
+    public function compileRandom($seed)
+    {
+        return 'RANDOM()';
     }
 
     /**
@@ -583,7 +595,7 @@ class Grammar extends BaseGrammar
             $sql .= $this->compileUnion($union);
         }
 
-        if (isset($query->unionOrders)) {
+        if (! empty($query->unionOrders)) {
             $sql .= ' '.$this->compileOrders($query, $query->unionOrders);
         }
 
@@ -615,7 +627,6 @@ class Grammar extends BaseGrammar
      * Compile an exists statement into SQL.
      *
      * @param \Illuminate\Database\Query\Builder $query
-     *
      * @return string
      */
     public function compileExists(Builder $query)
@@ -712,6 +723,22 @@ class Grammar extends BaseGrammar
     }
 
     /**
+     * Prepare the bindings for an update statement.
+     *
+     * @param  array  $bindings
+     * @param  array  $values
+     * @return array
+     */
+    public function prepareBindingsForUpdate(array $bindings, array $values)
+    {
+        $bindingsWithoutJoin = Arr::except($bindings, 'join');
+
+        return array_values(
+            array_merge($bindings['join'], $values, Arr::flatten($bindingsWithoutJoin))
+        );
+    }
+
+    /**
      * Compile a delete statement into SQL.
      *
      * @param  \Illuminate\Database\Query\Builder  $query
@@ -803,5 +830,15 @@ class Grammar extends BaseGrammar
     protected function removeLeadingBoolean($value)
     {
         return preg_replace('/and |or /i', '', $value, 1);
+    }
+
+    /**
+     * Get the grammar specific operators.
+     *
+     * @return array
+     */
+    public function getOperators()
+    {
+        return $this->operators;
     }
 }

@@ -2,7 +2,9 @@
 
 namespace Illuminate\Database\Console\Migrations;
 
+use Illuminate\Support\Collection;
 use Illuminate\Database\Migrations\Migrator;
+use Symfony\Component\Console\Input\InputOption;
 
 class StatusCommand extends BaseCommand
 {
@@ -47,17 +49,20 @@ class StatusCommand extends BaseCommand
      */
     public function fire()
     {
+        $this->migrator->setConnection($this->option('database'));
+
         if (! $this->migrator->repositoryExists()) {
             return $this->error('No migrations found.');
         }
 
         $ran = $this->migrator->getRepository()->getRan();
 
-        $migrations = [];
-
-        foreach ($this->getAllMigrationFiles() as $migration) {
-            $migrations[] = in_array($migration, $ran) ? ['<info>Y</info>', $migration] : ['<fg=red>N</fg=red>', $migration];
-        }
+        $migrations = Collection::make($this->getAllMigrationFiles())
+                            ->map(function ($migration) use ($ran) {
+                                return in_array($this->migrator->getMigrationName($migration), $ran)
+                                        ? ['<info>Y</info>', $this->migrator->getMigrationName($migration)]
+                                        : ['<fg=red>N</fg=red>', $this->migrator->getMigrationName($migration)];
+                            });
 
         if (count($migrations) > 0) {
             $this->table(['Ran?', 'Migration'], $migrations);
@@ -67,12 +72,26 @@ class StatusCommand extends BaseCommand
     }
 
     /**
-     * Get all of the migration files.
+     * Get an array of all of the migration files.
      *
      * @return array
      */
     protected function getAllMigrationFiles()
     {
-        return $this->migrator->getMigrationFiles($this->getMigrationPath());
+        return $this->migrator->getMigrationFiles($this->getMigrationPaths());
+    }
+
+    /**
+     * Get the console command options.
+     *
+     * @return array
+     */
+    protected function getOptions()
+    {
+        return [
+            ['database', null, InputOption::VALUE_OPTIONAL, 'The database connection to use.'],
+
+            ['path', null, InputOption::VALUE_OPTIONAL, 'The path of migrations files to use.'],
+        ];
     }
 }

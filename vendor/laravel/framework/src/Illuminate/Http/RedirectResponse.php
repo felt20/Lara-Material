@@ -8,7 +8,7 @@ use Illuminate\Support\MessageBag;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Session\Store as SessionStore;
 use Illuminate\Contracts\Support\MessageProvider;
-use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
 use Symfony\Component\HttpFoundation\RedirectResponse as BaseRedirectResponse;
 
 class RedirectResponse extends BaseRedirectResponse
@@ -72,21 +72,35 @@ class RedirectResponse extends BaseRedirectResponse
     {
         $input = $input ?: $this->request->input();
 
-        $this->session->flashInput($data = array_filter($input, $callback = function (&$value) use (&$callback) {
-            if (is_array($value)) {
-                $value = array_filter($value, $callback);
-            }
-
-            return ! $value instanceof UploadedFile;
-        }));
+        $this->session->flashInput($this->removeFilesFromInput($input));
 
         return $this;
     }
 
     /**
+     * Remove all uploaded files form the given input array.
+     *
+     * @param  array  $input
+     * @return array
+     */
+    protected function removeFilesFromInput(array $input)
+    {
+        foreach ($input as $key => $value) {
+            if (is_array($value)) {
+                $input[$key] = $this->removeFilesFromInput($value);
+            }
+
+            if ($value instanceof SymfonyUploadedFile) {
+                unset($input[$key]);
+            }
+        }
+
+        return $input;
+    }
+
+    /**
      * Flash an array of input to the session.
      *
-     * @param  mixed  string
      * @return $this
      */
     public function onlyInput()
@@ -97,7 +111,6 @@ class RedirectResponse extends BaseRedirectResponse
     /**
      * Flash an array of input to the session.
      *
-     * @param  mixed  string
      * @return \Illuminate\Http\RedirectResponse
      */
     public function exceptInput()
@@ -141,7 +154,7 @@ class RedirectResponse extends BaseRedirectResponse
     /**
      * Get the request instance.
      *
-     * @return \Illuminate\Http\Request
+     * @return \Illuminate\Http\Request|null
      */
     public function getRequest()
     {
@@ -162,7 +175,7 @@ class RedirectResponse extends BaseRedirectResponse
     /**
      * Get the session store implementation.
      *
-     * @return \Illuminate\Session\Store
+     * @return \Illuminate\Session\Store|null
      */
     public function getSession()
     {
@@ -185,7 +198,7 @@ class RedirectResponse extends BaseRedirectResponse
      *
      * @param  string  $method
      * @param  array  $parameters
-     * @return void
+     * @return $this
      *
      * @throws \BadMethodCallException
      */

@@ -1,7 +1,17 @@
 <?php
 
+/*
+ * This file is part of Psy Shell.
+ *
+ * (c) 2012-2015 Justin Hileman
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 namespace Psy;
 
+use Psy\VersionUpdater\Checker;
 use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputDefinition;
@@ -27,17 +37,28 @@ if (!function_exists('Psy\info')) {
         $config = new Configuration();
 
         $core = array(
-            'PsySH version'      => Shell::VERSION,
-            'PHP version'        => PHP_VERSION,
-            'default includes'   => $config->getDefaultIncludes(),
-            'require semicolons' => $config->requireSemicolons(),
-            'config file'        => array(
+            'PsySH version'       => Shell::VERSION,
+            'PHP version'         => PHP_VERSION,
+            'default includes'    => $config->getDefaultIncludes(),
+            'require semicolons'  => $config->requireSemicolons(),
+            'error logging level' => $config->errorLoggingLevel(),
+            'config file'         => array(
                 'default config file' => $config->getConfigFile(),
+                'local config file'   => $config->getLocalConfigFile(),
                 'PSYSH_CONFIG env'    => getenv('PSYSH_CONFIG'),
             ),
             // 'config dir'  => $config->getConfigDir(),
             // 'data dir'    => $config->getDataDir(),
             // 'runtime dir' => $config->getRuntimeDir(),
+        );
+
+        // Use an explicit, fresh update check here, rather than relying on whatever is in $config.
+        $checker = new Checker();
+        $updates = array(
+            'update available'       => !$checker->isLatest(),
+            'latest release version' => $checker->getLatest(),
+            'update check interval'  => $config->getUpdateCheck(),
+            'update cache file'      => $config->getUpdateCheckCacheFile(),
         );
 
         if ($config->hasReadline()) {
@@ -108,7 +129,7 @@ if (!function_exists('Psy\info')) {
             'custom matchers'        => array_map('get_class', $config->getTabCompletionMatchers()),
         );
 
-        return array_merge($core, compact('pcntl', 'readline', 'history', 'docs', 'autocomplete'));
+        return array_merge($core, compact('updates', 'pcntl', 'readline', 'history', 'docs', 'autocomplete'));
     }
 }
 
@@ -126,10 +147,12 @@ if (!function_exists('Psy\bin')) {
             $input = new ArgvInput();
             try {
                 $input->bind(new InputDefinition(array(
-                    new InputOption('help',    'h',  InputOption::VALUE_NONE),
-                    new InputOption('config',  'c',  InputOption::VALUE_REQUIRED),
-                    new InputOption('version', 'v',  InputOption::VALUE_NONE),
-                    new InputOption('cwd',     null, InputOption::VALUE_REQUIRED),
+                    new InputOption('help',     'h',  InputOption::VALUE_NONE),
+                    new InputOption('config',   'c',  InputOption::VALUE_REQUIRED),
+                    new InputOption('version',  'v',  InputOption::VALUE_NONE),
+                    new InputOption('cwd',      null, InputOption::VALUE_REQUIRED),
+                    new InputOption('color',    null, InputOption::VALUE_NONE),
+                    new InputOption('no-color', null, InputOption::VALUE_NONE),
 
                     new InputArgument('include', InputArgument::IS_ARRAY),
                 )));
@@ -142,6 +165,15 @@ if (!function_exists('Psy\bin')) {
             // Handle --config
             if ($configFile = $input->getOption('config')) {
                 $config['configFile'] = $configFile;
+            }
+
+            // Handle --color and --no-color
+            if ($input->getOption('color') && $input->getOption('no-color')) {
+                $usageException = new \RuntimeException('Using both "--color" and "--no-color" options is invalid.');
+            } elseif ($input->getOption('color')) {
+                $config['colorMode'] = Configuration::COLOR_MODE_FORCED;
+            } elseif ($input->getOption('no-color')) {
+                $config['colorMode'] = Configuration::COLOR_MODE_DISABLED;
             }
 
             $shell = new Shell(new Configuration($config));
@@ -165,6 +197,8 @@ Options:
   --config   -c Use an alternate PsySH config file location.
   --cwd         Use an alternate working directory.
   --version  -v Display the PsySH version.
+  --color       Force colors in output.
+  --no-color    Disable colors in output.
 
 EOL;
                 exit($usageException === null ? 0 : 1);
